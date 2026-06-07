@@ -1,16 +1,20 @@
+# 1. PROTOBUF FIX (Must be the absolute first thing in the file)
 import os
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
+# 2. SQLITE FIX (For ChromaDB on Cloud)
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
-os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
-
+# 3. STANDARD IMPORTS
 import streamlit as st
 from dotenv import load_dotenv
 
+# Document processing
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+# ... your other imports continue normally below this
 from langchain_community.vectorstores import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
