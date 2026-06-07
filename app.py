@@ -102,53 +102,42 @@ if uploaded_files:
             print("DEBUG: Assembling RAG chain components...")
             llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=gemini_api_key, temperature=0)
             
-            # (Keep your existing prompt and chain creation code here...)
-            # ...
+            # --- START OF RESTORED CODE ---
+            # Sub-Chain A: History-Aware Query Condenser Prompt
+            contextualize_q_system_prompt = (
+                "Given a chat history and the latest user question "
+                "which might reference context in the chat history, "
+                "formulate a standalone question which can be understood "
+                "without the chat history. Do NOT answer the question, "
+                "just reformulate it if needed and otherwise return it as is."
+            )
+            contextualize_q_prompt = ChatPromptTemplate.from_messages([
+                ("system", contextualize_q_system_prompt),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ])
+            history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
             
+            # Sub-Chain B: Core QA Generation Prompt
+            system_prompt = (
+                "You are an assistant for question-answering tasks. "
+                "Use the following pieces of retrieved context to answer the question. "
+                "If you don't know the answer, say that you don't know. "
+                "Keep the answer concise.\n\n"
+                "{context}"
+            )
+            qa_prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ])
+            question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+            # --- END OF RESTORED CODE ---
+            
+            # Final Assembly
             st.session_state.conversational_rag_chain = create_retrieval_chain(
                 history_aware_retriever, question_answer_chain
             )
             print("DEBUG: Pipeline successfully built and stored in session state!")
             
         st.success("✅ Conversational pipeline ready!")
-
-# 4. Interactive Chat Interface
-if "conversational_rag_chain" in st.session_state:
-    
-    # Display existing messages across app re-runs
-    for message in st.session_state.chat_history:
-        if isinstance(message, HumanMessage):
-            with st.chat_message("user"):
-                st.write(message.content)
-        elif isinstance(message, AIMessage):
-            with st.chat_message("assistant"):
-                st.write(message.content)
-
-    # Accept new conversational input
-    user_input = st.chat_input("Ask something about your uploaded documents...")
-    
-    if user_input:
-        # Instantly render user message
-        with st.chat_message("user"):
-            st.write(user_input)
-            
-        with st.spinner("🤖 Thinking..."):
-            # Execute pipeline passing the running history stream
-            response = st.session_state.conversational_rag_chain.invoke({
-                "input": user_input,
-                "chat_history": st.session_state.chat_history
-            })
-            answer = response["answer"]
-            
-        # Render assistant response
-        with st.chat_message("assistant"):
-            st.write(answer)
-            
-        # Append latest turn back into the running history stream
-        st.session_state.chat_history.extend([
-            HumanMessage(content=user_input),
-            AIMessage(content=answer)
-        ])
-        
-elif not uploaded_files:
-    st.info("Please upload your PDFs to initiate the conversation.")
