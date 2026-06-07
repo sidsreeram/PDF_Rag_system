@@ -9,3 +9,4 @@ chromadb
 pypdf
 python-dotenv
 gtts
+pysqlite3-binary
