@@ -1,5 +1,6 @@
 # 1. PROTOBUF FIX (Must be the absolute first thing in the file)
 import os
+import time
 
 # 1. PROTOBUF FIX (Must be the absolute first thing in the file)
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
@@ -83,7 +84,19 @@ if uploaded_files:
             )
             
             print("DEBUG: Initializing Chroma Vector Database...")
-            vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
+            vectorstore = Chroma(embedding_function=embeddings)
+            batch_size = 90
+        for i in range(0, len(splits), batch_size):
+            batch = splits[i:i + batch_size]
+            print(f"DEBUG: Processing chunks {i} to {i + len(batch)} of {len(splits)}...")
+            vectorstore.add_documents(batch)
+    
+    # If there are more chunks left, sleep for 60 seconds to reset the Google limit
+            if i + batch_size < len(splits):
+                print("DEBUG: Pausing for 60 seconds to avoid API rate limits...")
+                with st.spinner("Pausing for 60s to respect Google's free tier limits..."):
+                    time.sleep(61)
+
             retriever = vectorstore.as_retriever()
             
             print("DEBUG: Assembling RAG chain components...")
