@@ -5,8 +5,10 @@ langchain-core
 langchain-huggingface
 langchain-google-genai
 langchain-classic
-chromadb
 pypdf
 python-dotenv
 gtts
 pysqlite3-binary
+protobuf<4.0.0
+chromadb>=0.5.0
+opentelemetry-exporter-otlp-proto-grpc>=1.20.0
