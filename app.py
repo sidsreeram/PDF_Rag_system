@@ -78,7 +78,7 @@ if uploaded_files:
             
             print("DEBUG: Generating cloud embeddings via Google GenAI...")
             embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001", 
+            model="models/gemini-embedding-001", 
             google_api_key=gemini_api_key
             )
             
