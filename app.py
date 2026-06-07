@@ -35,13 +35,20 @@ if not gemini_api_key:
 uploaded_files = st.file_uploader("Upload 3 to 5 PDFs", type="pdf", accept_multiple_files=True)
 
 # 3. Process Documents and Construct the Conversational RAG Pipeline
-if uploaded_files and gemini_api_key:
+if uploaded_files:
+    print(f"DEBUG: Files uploaded count = {len(uploaded_files)}")
+    print(f"DEBUG: API Key present = {bool(gemini_api_key)}")
     
-    if "conversational_rag_chain" not in st.session_state:
-        with st.spinner("🔄 Indexing documents locally with Hugging Face embeddings..."):
+    if not gemini_api_key:
+        st.warning("⚠️ Files received, but Gemini API Key is missing. Please check your configuration.")
+    
+    if gemini_api_key and "conversational_rag_chain" not in st.session_state:
+        with st.spinner("🔄 Indexing documents locally..."):
+            print("DEBUG: Starting document parsing...")
             all_docs = []
             
             for uploaded_file in uploaded_files:
+                print(f"DEBUG: Reading file: {uploaded_file.name}")
                 temp_filename = f"temp_{uploaded_file.name}"
                 with open(temp_filename, "wb") as f:
                     f.write(uploaded_file.getbuffer())
@@ -50,55 +57,30 @@ if uploaded_files and gemini_api_key:
                 all_docs.extend(loader.load())
                 os.remove(temp_filename)
             
-            # Chunking and local vector db generation
+            print(f"DEBUG: Successfully split into {len(all_docs)} raw pages. Starting chunking...")
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             splits = text_splitter.split_documents(all_docs)
+            
+            print("DEBUG: Generating cloud embeddings via Google GenAI...")
             embeddings = GoogleGenerativeAIEmbeddings(
-                model="models/text-embedding-004", 
+                model="models/embedding-004", 
                 google_api_key=gemini_api_key
             )
+            
+            print("DEBUG: Initializing Chroma Vector Database...")
             vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
             retriever = vectorstore.as_retriever()
             
-            # Initialize LLM
+            print("DEBUG: Assembling RAG chain components...")
             llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=gemini_api_key, temperature=0)
             
-            # Sub-Chain A: History-Aware Query Condenser Prompt
-            contextualize_q_system_prompt = (
-                "Given a chat history and the latest user question "
-                "which might reference context in the chat history, "
-                "formulate a standalone question which can be understood "
-                "without the chat history. Do NOT answer the question, "
-                "just reformulate it if needed and otherwise return it as is."
-            )
-            contextualize_q_prompt = ChatPromptTemplate.from_messages([
-                ("system", contextualize_q_system_prompt),
-                MessagesPlaceholder("chat_history"),
-                ("human", "{input}"),
-            ])
+            # (Keep your existing prompt and chain creation code here...)
+            # ...
             
-            # Create the sub-chain that condenses vague queries using history
-            history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
-            
-            # Sub-Chain B: Core QA Generation Prompt
-            system_prompt = (
-                "You are an assistant for question-answering tasks. "
-                "Use the following pieces of retrieved context to answer the question. "
-                "If you don't know the answer, say that you don't know. "
-                "Keep the answer concise.\n\n"
-                "{context}"
-            )
-            qa_prompt = ChatPromptTemplate.from_messages([
-                ("system", system_prompt),
-                MessagesPlaceholder("chat_history"),
-                ("human", "{input}"),
-            ])
-            
-            # Assemble the complete conversational pipeline
-            question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
             st.session_state.conversational_rag_chain = create_retrieval_chain(
                 history_aware_retriever, question_answer_chain
             )
+            print("DEBUG: Pipeline successfully built and stored in session state!")
             
         st.success("✅ Conversational pipeline ready!")
 
