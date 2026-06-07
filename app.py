@@ -78,8 +78,8 @@ if uploaded_files:
             
             print("DEBUG: Generating cloud embeddings via Google GenAI...")
             embeddings = GoogleGenerativeAIEmbeddings(
-                model="models/text-embedding-004", 
-                google_api_key=gemini_api_key
+            model="models/embedding-001", 
+            google_api_key=gemini_api_key
             )
             
             print("DEBUG: Initializing Chroma Vector Database...")
