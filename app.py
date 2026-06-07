@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_google_genai import GoogleGenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 # LLM, Memory, and Chain assemblies
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -53,7 +53,7 @@ if uploaded_files and gemini_api_key:
             # Chunking and local vector db generation
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             splits = text_splitter.split_documents(all_docs)
-            embeddings = GoogleGenAIEmbeddings(
+            embeddings = GoogleGenerativeAIEmbeddings(
                 model="models/text-embedding-004", 
                 google_api_key=gemini_api_key
             )
