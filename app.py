@@ -74,7 +74,7 @@ if uploaded_files:
                 os.remove(temp_filename)
             
             print(f"DEBUG: Successfully split into {len(all_docs)} raw pages. Starting chunking...")
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=400)
             splits = text_splitter.split_documents(all_docs)
             
             print("DEBUG: Generating cloud embeddings via Google GenAI...")
