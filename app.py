@@ -1,8 +1,8 @@
 # 1. PROTOBUF FIX (Must be the absolute first thing in the file)
 import os
 import time
+import io
 
-# 1. PROTOBUF FIX (Must be the absolute first thing in the file)
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 
 # 2. SQLITE FIX (For ChromaDB on Cloud)
@@ -15,12 +15,10 @@ except ImportError:
 
 import streamlit as st
 from dotenv import load_dotenv
-# ... the rest of your imports continue normally below this
 
 # Document processing
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-# ... your other imports continue normally below this
 from langchain_community.vectorstores import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
@@ -30,6 +28,9 @@ from langchain_classic.chains import create_history_aware_retriever, create_retr
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage
+
+# Voice output
+from gtts import gTTS
 
 # Load local environment variables
 load_dotenv()
@@ -59,7 +60,7 @@ if uploaded_files:
         st.warning("⚠️ Files received, but Gemini API Key is missing. Please check your configuration.")
     
     if gemini_api_key and "conversational_rag_chain" not in st.session_state:
-        with st.spinner("🔄 Indexing documents locally..."):
+        with st.spinner("🔄 Indexing documents... This may take a moment to respect API limits."):
             print("DEBUG: Starting document parsing...")
             all_docs = []
             
@@ -79,30 +80,31 @@ if uploaded_files:
             
             print("DEBUG: Generating cloud embeddings via Google GenAI...")
             embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/gemini-embedding-001", 
-            google_api_key=gemini_api_key
+                model="models/gemini-embedding-001", 
+                google_api_key=gemini_api_key
             )
             
             print("DEBUG: Initializing Chroma Vector Database...")
             vectorstore = Chroma(embedding_function=embeddings)
+            
+            # --- CORRECTLY INDENTED BATCHING LOOP ---
             batch_size = 90
-        for i in range(0, len(splits), batch_size):
-            batch = splits[i:i + batch_size]
-            print(f"DEBUG: Processing chunks {i} to {i + len(batch)} of {len(splits)}...")
-            vectorstore.add_documents(batch)
-    
-    # If there are more chunks left, sleep for 60 seconds to reset the Google limit
-            if i + batch_size < len(splits):
-                print("DEBUG: Pausing for 60 seconds to avoid API rate limits...")
-                with st.spinner("Pausing for 60s to respect Google's free tier limits..."):
+            for i in range(0, len(splits), batch_size):
+                batch = splits[i:i + batch_size]
+                print(f"DEBUG: Processing chunks {i} to {i + len(batch)} of {len(splits)}...")
+                vectorstore.add_documents(batch)
+                
+                # If there are more chunks left, sleep for 60 seconds to reset the Google limit
+                if i + batch_size < len(splits):
+                    print("DEBUG: Pausing for 60 seconds to avoid API rate limits...")
                     time.sleep(61)
+            # ----------------------------------------
 
             retriever = vectorstore.as_retriever()
             
             print("DEBUG: Assembling RAG chain components...")
             llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=gemini_api_key, temperature=0)
             
-            # --- START OF RESTORED CODE ---
             # Sub-Chain A: History-Aware Query Condenser Prompt
             contextualize_q_system_prompt = (
                 "Given a chat history and the latest user question "
@@ -132,7 +134,6 @@ if uploaded_files:
                 ("human", "{input}"),
             ])
             question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
-            # --- END OF RESTORED CODE ---
             
             # Final Assembly
             st.session_state.conversational_rag_chain = create_retrieval_chain(
@@ -141,3 +142,51 @@ if uploaded_files:
             print("DEBUG: Pipeline successfully built and stored in session state!")
             
         st.success("✅ Conversational pipeline ready!")
+
+# 4. RESTORED: Interactive Chat Interface
+if "conversational_rag_chain" in st.session_state:
+    
+    # Display existing messages across app re-runs
+    for message in st.session_state.chat_history:
+        if isinstance(message, HumanMessage):
+            with st.chat_message("user"):
+                st.write(message.content)
+        elif isinstance(message, AIMessage):
+            with st.chat_message("assistant"):
+                st.write(message.content)
+
+    # Accept new conversational input
+    user_input = st.chat_input("Ask something about your uploaded documents...")
+    
+    if user_input:
+        with st.chat_message("user"):
+            st.write(user_input)
+            
+        with st.spinner("🤖 Thinking..."):
+            response = st.session_state.conversational_rag_chain.invoke({
+                "input": user_input,
+                "chat_history": st.session_state.chat_history
+            })
+            answer = response["answer"]
+            
+        with st.chat_message("assistant"):
+            st.write(answer)
+            
+            # Generate Text-to-Speech Audio
+            try:
+                tts = gTTS(text=answer, lang='en')
+                audio_bytes = io.BytesIO()
+                tts.write_to_fp(audio_bytes)
+                audio_bytes.seek(0)
+                st.audio(audio_bytes, format="audio/mp3")
+            except Exception as e:
+                st.error("Audio generation failed for this response.")
+            
+        # Append latest turn back into the running history stream
+        st.session_state.chat_history.extend([
+            HumanMessage(content=user_input),
+            AIMessage(content=answer)
+        ])
+        
+elif not uploaded_files:
+    st.info("Please upload your PDFs to initiate the conversation.")
