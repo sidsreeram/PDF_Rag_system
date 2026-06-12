@@ -28,6 +28,7 @@ from langchain_classic.chains import create_history_aware_retriever, create_retr
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_community.document_loaders import WebBaseLoader
 
 # Voice output
 from gtts import gTTS
@@ -49,10 +50,11 @@ if not gemini_api_key:
     gemini_api_key = st.sidebar.text_input("Enter Google Gemini API Key", type="password")
 
 # 2. Document Upload Interface
-uploaded_files = st.file_uploader("Upload 3 to 5 PDFs", type="pdf", accept_multiple_files=True)
-
+# 2. Document & URL Upload Interface
+uploaded_files = st.file_uploader("Upload pdfs", type="pdf", accept_multiple_files=True)
+url_input = st.sidebar.text_input("🌐 Or paste a Website URL to analyze")
 # 3. Process Documents and Construct the Conversational RAG Pipeline
-if uploaded_files:
+if uploaded_files or url_input:
     print(f"DEBUG: Files uploaded count = {len(uploaded_files)}")
     print(f"DEBUG: API Key present = {bool(gemini_api_key)}")
     
@@ -60,20 +62,27 @@ if uploaded_files:
         st.warning("⚠️ Files received, but Gemini API Key is missing. Please check your configuration.")
     
     if gemini_api_key and "conversational_rag_chain" not in st.session_state:
-        with st.spinner("🔄 Indexing documents... This may take a moment to respect API limits."):
+        with st.spinner("🔄 Indexing documents and websites... This may take a moment to respect API limits."):
             print("DEBUG: Starting document parsing...")
             all_docs = []
-            
-            for uploaded_file in uploaded_files:
-                print(f"DEBUG: Reading file: {uploaded_file.name}")
-                temp_filename = f"temp_{uploaded_file.name}"
-                with open(temp_filename, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
+            if uploaded_files:
+                for uploaded_file in uploaded_files:
+                    print(f"DEBUG: Reading file: {uploaded_file.name}")
+                    temp_filename = f"temp_{uploaded_file.name}"
+                    with open(temp_filename, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
                 
-                loader = PyPDFLoader(temp_filename)
-                all_docs.extend(loader.load())
-                os.remove(temp_filename)
-            
+                    loader = PyPDFLoader(temp_filename)
+                    all_docs.extend(loader.load())
+                    os.remove(temp_filename)
+            if url_input:
+                print(f"DEBUG: Scraping website: {url_input}")
+                try:
+                    web_loader = WebBaseLoader(url_input)
+                    all_docs.extend(web_loader.load())
+                    st.toast("✅ Website successfully scraped!")
+                except Exception as e:
+                    st.error(f"Could not read the website. Error: {e}")
             print(f"DEBUG: Successfully split into {len(all_docs)} raw pages. Starting chunking...")
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=200)
             splits = text_splitter.split_documents(all_docs)
@@ -88,12 +97,16 @@ if uploaded_files:
             vectorstore = Chroma(embedding_function=embeddings)
             
             # --- CORRECTLY INDENTED BATCHING LOOP ---
-            batch_size = 90
+            batch_size = 25
             for i in range(0, len(splits), batch_size):
                 batch = splits[i:i + batch_size]
                 print(f"DEBUG: Processing chunks {i} to {i + len(batch)} of {len(splits)}...")
-                vectorstore.add_documents(batch)
-                
+                try:
+                    vectorstore.add_documents(batch)
+                except Exception as e:
+                    print(f"DEBUG: Batch failed! Error: {e}")
+                    st.warning(f"Skipped a tiny portion of text because Google's server couldn't read it.")
+                    continue
                 # If there are more chunks left, sleep for 60 seconds to reset the Google limit
                 if i + batch_size < len(splits):
                     print("DEBUG: Pausing for 60 seconds to avoid API rate limits...")
