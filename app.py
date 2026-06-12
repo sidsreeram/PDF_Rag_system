@@ -97,20 +97,27 @@ if uploaded_files or url_input:
             vectorstore = Chroma(embedding_function=embeddings)
             
             # --- CORRECTLY INDENTED BATCHING LOOP ---
-            batch_size = 25
+            batch_size = 10 
+            
             for i in range(0, len(splits), batch_size):
                 batch = splits[i:i + batch_size]
                 print(f"DEBUG: Processing chunks {i} to {i + len(batch)} of {len(splits)}...")
+                
                 try:
                     vectorstore.add_documents(batch)
+                    # Add a 1-second breather between every single batch
+                    time.sleep(1) 
                 except Exception as e:
                     print(f"DEBUG: Batch failed! Error: {e}")
-                    st.warning(f"Skipped a tiny portion of text because Google's server couldn't read it.")
+                    # If Google crashes, we gracefully skip the weird text and keep the app alive
+                    st.toast("⚠️ Google's server choked on a tiny piece of text. Skipping it...")
                     continue
-                # If there are more chunks left, sleep for 60 seconds to reset the Google limit
-                if i + batch_size < len(splits):
+                
+                # If we've processed 80 chunks, pause for 60s to respect the 100/min rate limit
+                if i > 0 and i % 80 == 0:
                     print("DEBUG: Pausing for 60 seconds to avoid API rate limits...")
-                    time.sleep(61)
+                    with st.spinner("Pausing for 60s to let Google's servers cool down..."):
+                        time.sleep(61)
             # ----------------------------------------
 
             retriever = vectorstore.as_retriever()
